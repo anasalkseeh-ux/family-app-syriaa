@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy, getDocs } from 'firebase/firestore';
 import { 
-  Users, Wallet, ShoppingBag, ShieldAlert, MessageSquare, Bell, Calendar, Plus, Trash2, 
-  Send, RefreshCw, Smartphone, TrendingUp, AlertTriangle, CheckCircle2, UserPlus, Clock, LogOut 
+  Users, Wallet, ShoppingBag, ShieldAlert, MessageSquare, Calendar, Plus, Trash2, 
+  Send, TrendingUp, AlertTriangle, CheckCircle2, UserPlus, Clock, Lock, LogOut, Key 
 } from 'lucide-react';
 
 const firebaseConfig = {
@@ -20,6 +20,11 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loginUser, setLoginUser] = useState('');
+  const [loginPass, setLoginPass] = useState('');
+  const [loginError, setLoginError] = useState('');
+
   const [activeTab, setActiveTab] = useState('dashboard');
   const [timeFilter, setTimeFilter] = useState('month');
   
@@ -30,20 +35,26 @@ export default function App() {
   const [chatMessages, setChatMessages] = useState([]);
   const [totalBudget, setTotalBudget] = useState(15000000);
   
-  const [currentUser, setCurrentUser] = useState('أنس');
+  const [currentUser, setCurrentUser] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
+
   const [newMemberName, setNewMemberName] = useState('');
+  const [newMemberUsername, setNewMemberUsername] = useState('');
+  const [newMemberPass, setNewMemberPass] = useState('');
   const [newMemberLimit, setNewMemberLimit] = useState('');
   
   const [expenseTitle, setExpenseTitle] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseCategory, setExpenseCategory] = useState('فواتير');
-  const [expenseMember, setExpenseMember] = useState('أنس');
+  const [expenseMember, setExpenseMember] = useState('');
 
   const [toBuyItem, setToBuyItem] = useState('');
   const [toAvoidItem, setToAvoidItem] = useState('');
   const [chatInput, setChatInput] = useState('');
 
   useEffect(() => {
+    if (!isAuthenticated) return;
+
     const unsubMembers = onSnapshot(collection(db, 'members'), (snapshot) => {
       setMembers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
@@ -73,20 +84,70 @@ export default function App() {
       unsubAvoid();
       unsubChat();
     };
-  }, []);
+  }, [isAuthenticated]);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoginError('');
+
+    if (loginUser === 'anas' && loginPass === 'anas123') {
+      setCurrentUser('أنس');
+      setIsAdmin(true);
+      setIsAuthenticated(true);
+      setExpenseMember('أنس');
+      return;
+    }
+
+    try {
+      const querySnapshot = await getDocs(collection(db, 'members'));
+      let found = false;
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data.username === loginUser && data.password === loginPass) {
+          found = true;
+          if (data.activeSession && data.activeSession !== sessionId) {
+            setLoginError('⚠️ هذا الحساب مفتوح حالياً على جهاز آخر! لا يمكن فتحه من جهازين في نفس الوقت.');
+            return;
+          }
+          setCurrentUser(data.name);
+          setIsAdmin(false);
+          setIsAuthenticated(true);
+          setExpenseMember(data.name);
+        }
+      });
+
+      if (!found && !loginError) {
+        setLoginError('اسم المستخدم أو كلمة المرور غير صحيحة.');
+      }
+    } catch (err) {
+      setLoginError('حدث خطأ أثناء تسجيل الدخول. تأكد من الاتصال.');
+    }
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setLoginUser('');
+    setLoginPass('');
+  };
+
+  const sessionId = Math.random().toString(36).substring(7);
 
   const totalSpent = expenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
   const remainingBudget = totalBudget - totalSpent;
 
   const handleAddMember = async (e) => {
     e.preventDefault();
-    if (!newMemberName || !newMemberLimit) return;
+    if (!newMemberName || !newMemberUsername || !newMemberPass || !newMemberLimit) return;
     await addDoc(collection(db, 'members'), {
       name: newMemberName,
+      username: newMemberUsername,
+      password: newMemberPass,
       limit: Number(newMemberLimit),
       role: 'فرد'
     });
     setNewMemberName('');
+    setNewMemberUsername('');
+    setNewMemberPass('');
     setNewMemberLimit('');
   };
 
@@ -145,6 +206,65 @@ export default function App() {
     });
   };
 
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4 font-sans dir-rtl" dir="rtl">
+        <div className="bg-slate-900 border border-slate-800 p-8 rounded-3xl shadow-2xl max-w-md w-full space-y-6">
+          <div className="text-center space-y-2">
+            <div className="bg-emerald-500/20 w-16 h-16 mx-auto flex items-center justify-center rounded-2xl border border-emerald-500/40 text-emerald-400">
+              <Lock className="w-8 h-8" />
+            </div>
+            <h1 className="text-2xl font-bold text-white">Family - بوابة الدخول الآمن</h1>
+            <p className="text-xs text-slate-400">الرجاء إدخال بيانات الحساب الخاصة بك للمتابعة</p>
+          </div>
+
+          {loginError && (
+            <div className="bg-rose-500/10 border border-rose-500/30 text-rose-400 p-3 rounded-xl text-xs text-center">
+              {loginError}
+            </div>
+          )}
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-xs text-slate-400">اسم المستخدم (Username)</label>
+              <input
+                type="text"
+                placeholder="أدخل اسم المستخدم"
+                value={loginUser}
+                onChange={(e) => setLoginUser(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500"
+                required
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs text-slate-400">كلمة المرور (Password)</label>
+              <input
+                type="password"
+                placeholder="••••••••"
+                value={loginPass}
+                onChange={(e) => setLoginPass(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500"
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-emerald-500/20 text-sm"
+            >
+              تسجيل الدخول للنظام
+            </button>
+          </form>
+
+          <div className="text-center text-xs text-slate-500 pt-2 border-t border-slate-800">
+            ملاحظة: الحسابات محمية ولا يمكن فتح نفس الحساب على جهازين في نفس الوقت.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sans dir-rtl" dir="rtl">
       <header className="bg-slate-800 border-b border-slate-700 p-4 sticky top-0 z-50 shadow-md">
@@ -157,23 +277,16 @@ export default function App() {
               <h1 className="text-xl font-bold bg-gradient-to-r from-emerald-400 to-teal-200 bg-clip-text text-transparent">
                 Family - عائلتي
               </h1>
-              <p className="text-xs text-slate-400">إدارة المنزل والميزانية الحية</p>
+              <p className="text-xs text-slate-400">مرحباً بك، {currentUser} {isAdmin && '(مدير النظام)'}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400 hidden sm:inline">الحساب الحالي:</span>
-            <select 
-              value={currentUser} 
-              onChange={(e) => setCurrentUser(e.target.value)}
-              className="bg-slate-700 border border-slate-600 rounded-lg text-sm px-3 py-1.5 focus:outline-none focus:border-emerald-500"
-            >
-              <option value="أنس">أنس (مدير النظام)</option>
-              {members.map(m => (
-                <option key={m.id} value={m.name}>{m.name}</option>
-              ))}
-            </select>
-          </div>
+          <button
+            onClick={handleLogout}
+            className="bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all"
+          >
+            <LogOut className="w-4 h-4" /> خروج
+          </button>
         </div>
       </header>
 
@@ -185,7 +298,6 @@ export default function App() {
               <Wallet className="w-5 h-5 text-emerald-400" />
             </div>
             <div className="text-2xl font-bold text-white">{totalBudget.toLocaleString()} ل.س</div>
-            <div className="text-xs text-slate-400 mt-1">محددة شهرياً للعائلة</div>
           </div>
 
           <div className="bg-slate-800/80 p-5 rounded-2xl border border-slate-700/60 shadow-sm">
@@ -194,7 +306,6 @@ export default function App() {
               <TrendingUp className="w-5 h-5 text-rose-400" />
             </div>
             <div className="text-2xl font-bold text-rose-400">{totalSpent.toLocaleString()} ل.س</div>
-            <div className="text-xs text-slate-400 mt-1">المبلغ المصروف كلياً</div>
           </div>
 
           <div className="bg-slate-800/80 p-5 rounded-2xl border border-slate-700/60 shadow-sm">
@@ -205,7 +316,6 @@ export default function App() {
             <div className={`text-2xl font-bold ${remainingBudget < 0 ? 'text-red-500' : 'text-teal-400'}`}>
               {remainingBudget.toLocaleString()} ل.س
             </div>
-            <div className="text-xs text-slate-400 mt-1">الرصيد المتاح للإنفاق</div>
           </div>
         </div>
 
@@ -266,16 +376,12 @@ export default function App() {
                   <option value="شخصي">مصاريف شخصية</option>
                   <option value="أخرى">أخرى</option>
                 </select>
-                <select
-                  value={expenseMember}
-                  onChange={(e) => setExpenseMember(e.target.value)}
-                  className="bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="أنس">أنس</option>
-                  {members.map(m => (
-                    <option key={m.id} value={m.name}>{m.name}</option>
-                  ))}
-                </select>
+                <input
+                  type="text"
+                  value={currentUser}
+                  disabled
+                  className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-sm text-slate-400 cursor-not-allowed text-center"
+                />
                 <button
                   type="submit"
                   className="bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl px-4 py-2 text-sm font-semibold transition-all shadow-md shadow-emerald-500/20"
@@ -352,33 +458,53 @@ export default function App() {
 
         {activeTab === 'members' && (
           <div className="space-y-6">
-            <div className="bg-slate-800/80 p-6 rounded-2xl border border-slate-700/60">
-              <h3 className="text-lg font-bold mb-4 text-emerald-400 flex items-center gap-2">
-                <UserPlus className="w-5 h-5" /> إضافة فرد جديد للعائلة
-              </h3>
-              <form onSubmit={handleAddMember} className="flex flex-col sm:flex-row gap-3">
-                <input
-                  type="text"
-                  placeholder="اسم الفرد (مثلاً: أحمد)"
-                  value={newMemberName}
-                  onChange={(e) => setNewMemberName(e.target.value)}
-                  className="flex-1 bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
-                />
-                <input
-                  type="number"
-                  placeholder="سقف المصروف الشهري (ل.س)"
-                  value={newMemberLimit}
-                  onChange={(e) => setNewMemberLimit(e.target.value)}
-                  className="flex-1 bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
-                />
-                <button
-                  type="submit"
-                  className="bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl px-6 py-2 text-sm font-semibold transition-all shadow-md shadow-emerald-500/20 whitespace-nowrap"
-                >
-                  إضافة الفرد
-                </button>
-              </form>
-            </div>
+            {isAdmin && (
+              <div className="bg-slate-800/80 p-6 rounded-2xl border border-slate-700/60 space-y-4">
+                <h3 className="text-lg font-bold text-emerald-400 flex items-center gap-2">
+                  <UserPlus className="w-5 h-5" /> إضافة فرد جديد وتحديد بيانات الدخول
+                </h3>
+                <form onSubmit={handleAddMember} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+                  <input
+                    type="text"
+                    placeholder="اسم الفرد (مثلاً: أحمد)"
+                    value={newMemberName}
+                    onChange={(e) => setNewMemberName(e.target.value)}
+                    className="bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
+                    required
+                  />
+                  <input
+                    type="text"
+                    placeholder="اسم المستخدم (Username)"
+                    value={newMemberUsername}
+                    onChange={(e) => setNewMemberUsername(e.target.value)}
+                    className="bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
+                    required
+                  />
+                  <input
+                    type="text"
+                    placeholder="كلمة المرور (Password)"
+                    value={newMemberPass}
+                    onChange={(e) => setNewMemberPass(e.target.value)}
+                    className="bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
+                    required
+                  />
+                  <input
+                    type="number"
+                    placeholder="سقف المصروف (ل.س)"
+                    value={newMemberLimit}
+                    onChange={(e) => setNewMemberLimit(e.target.value)}
+                    className="bg-slate-700/50 border border-slate-600 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
+                    required
+                  />
+                  <button
+                    type="submit"
+                    className="bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl px-4 py-2 text-sm font-semibold transition-all shadow-md shadow-emerald-500/20"
+                  >
+                    حفظ الحساب
+                  </button>
+                </form>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {members.map((m) => {
@@ -392,15 +518,19 @@ export default function App() {
                   <div key={m.id} className="bg-slate-800/80 p-5 rounded-2xl border border-slate-700/60 space-y-3">
                     <div className="flex justify-between items-center">
                       <div>
-                        <h4 className="font-bold text-slate-100">{m.name}</h4>
+                        <h4 className="font-bold text-slate-100 flex items-center gap-2">
+                          {m.name} <span className="text-xs bg-slate-700 px-2 py-0.5 rounded text-slate-400 font-mono">User: {m.username}</span>
+                        </h4>
                         <span className="text-xs text-slate-400">سقف المصروف: {m.limit.toLocaleString()} ل.س</span>
                       </div>
-                      <button 
-                        onClick={() => handleDeleteMember(m.id)}
-                        className="text-slate-500 hover:text-rose-400 transition-colors p-1"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {isAdmin && (
+                        <button 
+                          onClick={() => handleDeleteMember(m.id)}
+                          className="text-slate-500 hover:text-rose-400 transition-colors p-1"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
 
                     <div className="space-y-1">
@@ -540,7 +670,7 @@ export default function App() {
       </main>
 
       <footer className="bg-slate-800 border-t border-slate-700 p-4 text-center text-xs text-slate-400 fixed bottom-0 w-full z-40">
-        تطبيق Family - مصمم ومتزامن لحظياً عبر Firebase لخدمة العائلة والميزانية المنزلية بالليرة السورية
+        تطبيق Family - مصمم بأعلى معايير الخصوصية والأمان للعائلة السورية
       </footer>
     </div>
   );
